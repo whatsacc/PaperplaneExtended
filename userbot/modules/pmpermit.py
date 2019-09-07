@@ -20,7 +20,7 @@ from userbot.events import register, errors_handler
 UNAPPROVED_MSG = (
     "`Ciao! Questo è un messaggio automatico,`"
     "` attendi che approvo i tuoi DM.`"
-    "` Nel frattempo non riempire la mia casella, in tal caso verrai spammato`")
+    "` Nel frattempo non riempire la mia casella, in tal caso verrai spammato.`")
 # =================================================================
 
 
