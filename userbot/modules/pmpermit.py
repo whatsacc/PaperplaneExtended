@@ -5,34 +5,35 @@
 #
 """ Userbot module for keeping control who PM you. """
 
+from sqlalchemy.exc import IntegrityError
 from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
 from telethon.tl.functions.messages import ReportSpamRequest
 from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.types import User
-from sqlalchemy.exc import IntegrityError
 
-from userbot import (COUNT_PM, CMD_HELP, BOTLOG, BOTLOG_CHATID, PM_AUTO_BAN,
-                     LASTMSG, LOGS)
-
-from userbot.events import register, errors_handler
+from userbot import (BOTLOG, BOTLOG_CHATID, BRAIN_CHECKER, CMD_HELP, COUNT_PM,
+                     LASTMSG, LOGS, PM_AUTO_BAN)
+from userbot.events import register
 
 # ========================= CONSTANTS ============================
 UNAPPROVED_MSG = (
-    "`Ciao! Questo è un messaggio automatico,`"
-    "` attendi che approvo i tuoi DM.`"
-    "` Nel frattempo non riempire la mia casella, in tal caso verrai spammato.`")
+    "`Bleep blop! This is a bot. Don't fret.\n\n`"
+    "`My master hasn't approved you to PM.`"
+    "`Please wait for my master to look in, he mostly approves PMs.\n\n`"
+    "`As far as I know, he doesn't usually approve retards though.`")
+
+
 # =================================================================
 
 
 @register(incoming=True, disable_edited=True)
-@errors_handler
 async def permitpm(event):
-    """ Prohibits people from PMing you without approval. \
+    """ Permits people from PMing you without approval. \
         Will block retarded nibbas automatically. """
     if PM_AUTO_BAN:
-        self_user = await event.client.get_me()
-        if event.is_private and event.chat_id != 777000 and event.chat_id != self_user.id and not (
-                await event.get_sender()).bot:
+        if event.sender_id in BRAIN_CHECKER:
+            return
+        if event.is_private and not (await event.get_sender()).bot:
             try:
                 from userbot.modules.sql_helper.pm_permit_sql import is_approved
                 from userbot.modules.sql_helper.globals import gvarstatus
@@ -50,11 +51,6 @@ async def permitpm(event):
                     # If the message doesn't same as previous one
                     # Send the Unapproved Message again
                     if event.text != prevmsg:
-                        async for message in event.client.iter_messages(
-                                event.chat_id,
-                                from_user='me',
-                                search=UNAPPROVED_MSG):
-                            await message.delete()
                         await event.reply(UNAPPROVED_MSG)
                     LASTMSG.update({event.chat_id: event.text})
                 else:
@@ -70,8 +66,8 @@ async def permitpm(event):
 
                 if COUNT_PM[event.chat_id] > 4:
                     await event.respond(
-                        "`You were spamming my PM, which I didn't like.`\n"
-                        "`You have been BLOCKED and reported as SPAM, until further notice.`"
+                        "`You were spamming my master's PM, which I don't like.`"
+                        " `I'mma Report Spam.`"
                     )
 
                     try:
@@ -94,19 +90,19 @@ async def permitpm(event):
                         name0 = str(name.first_name)
                         await event.client.send_message(
                             BOTLOG_CHATID,
-                            "[" + name0 + "](tg://user?id=" +
-                            str(event.chat_id) + ")" +
-                            " was just another retarded nibba",
+                            "["
+                            + name0
+                            + "](tg://user?id="
+                            + str(event.chat_id)
+                            + ")"
+                            + " was just another retarded nibba",
                         )
 
 
 @register(disable_edited=True, outgoing=True)
-@errors_handler
 async def auto_accept(event):
     """ Will approve automatically if you texted them first. """
-    self_user = await event.client.get_me()
-    if event.is_private and event.chat_id != 777000 and event.chat_id != self_user.id and not (
-            await event.get_sender()).bot:
+    if event.is_private:
         try:
             from userbot.modules.sql_helper.pm_permit_sql import is_approved
             from userbot.modules.sql_helper.pm_permit_sql import approve
@@ -117,59 +113,51 @@ async def auto_accept(event):
         if isinstance(chat, User):
             if is_approved(event.chat_id) or chat.bot:
                 return
-            async for message in event.client.iter_messages(event.chat_id,
-                                                            reverse=True,
-                                                            limit=1):
-                if message.message is not UNAPPROVED_MSG and message.from_id == (
-                        await event.client.get_me()).id:
-                    try:
-                        approve(event.chat_id)
-                    except IntegrityError:
-                        return
-
-                if is_approved(event.chat_id) and BOTLOG:
+            async for message in event.client.iter_messages(
+                    chat.id, reverse=True, limit=1
+            ):
+                if message.from_id == (await event.client.get_me()).id:
+                    approve(chat.id)
+                if BOTLOG:
                     await event.client.send_message(
                         BOTLOG_CHATID,
-                        "#AUTO-APPROVED\n" + "User: " +
+                        "#AUTO-APPROVED\n"
+                        + "User: " +
                         f"[{chat.first_name}](tg://user?id={chat.id})",
                     )
 
 
 @register(outgoing=True, pattern="^.notifoff$")
-@errors_handler
 async def notifoff(noff_event):
     """ For .notifoff command, stop getting notifications from unapproved PMs. """
-    if not noff_event.text[0].isalpha() and noff_event.text[0] not in (
-            "/", "#", "@", "!"):
+    if not noff_event.text[0].isalpha(
+    ) and noff_event.text[0] not in ("/", "#", "@", "!"):
         try:
             from userbot.modules.sql_helper.globals import addgvar
         except AttributeError:
             return
         addgvar("NOTIF_OFF", True)
-        await noff_event.edit(
-            "`Notifications from unapproved PM's are silenced!`")
+        await noff_event.edit("`Notifications silenced!`")
 
 
 @register(outgoing=True, pattern="^.notifon$")
-@errors_handler
 async def notifon(non_event):
     """ For .notifoff command, get notifications from unapproved PMs. """
-    if not non_event.text[0].isalpha() and non_event.text[0] not in ("/", "#",
-                                                                     "@", "!"):
+    if not non_event.text[0].isalpha(
+    ) and non_event.text[0] not in ("/", "#", "@", "!"):
         try:
             from userbot.modules.sql_helper.globals import delgvar
         except AttributeError:
             return
         delgvar("NOTIF_OFF")
-        await non_event.edit("`Notifications from unapproved PM's unmuted!`")
+        await non_event.edit("`Notifications unmuted!`")
 
 
 @register(outgoing=True, pattern="^.approve$")
-@errors_handler
 async def approvepm(apprvpm):
     """ For .approve command, give someone the permissions to PM you. """
-    if not apprvpm.text[0].isalpha() and apprvpm.text[0] not in ("/", "#", "@",
-                                                                 "!"):
+    if not apprvpm.text[0].isalpha() and apprvpm.text[0] not in (
+            "/", "#", "@", "!"):
         try:
             from userbot.modules.sql_helper.pm_permit_sql import approve
         except AttributeError:
@@ -178,8 +166,7 @@ async def approvepm(apprvpm):
 
         if apprvpm.reply_to_msg_id:
             reply = await apprvpm.get_reply_message()
-            replied_user = await apprvpm.client(
-                GetFullUserRequest(reply.from_id))
+            replied_user = await apprvpm.client(GetFullUserRequest(reply.from_id))
             aname = replied_user.user.id
             name0 = str(replied_user.user.first_name)
             uid = replied_user.user.id
@@ -195,67 +182,28 @@ async def approvepm(apprvpm):
             await apprvpm.edit("`User may already be approved.`")
             return
 
-        await apprvpm.edit(f"[{name0}](tg://user?id={uid}) `approved to PM!`")
-
-        async for message in apprvpm.client.iter_messages(
-                apprvpm.chat_id, from_user='me', search=UNAPPROVED_MSG):
-            await message.delete()
+        await apprvpm.edit(
+            f"[{name0}](tg://user?id={uid}) `approved to PM!`"
+        )
 
         if BOTLOG:
             await apprvpm.client.send_message(
                 BOTLOG_CHATID,
-                "#APPROVED\n" + "User: " + f"[{name0}](tg://user?id={uid})",
-            )
-
-
-@register(outgoing=True, pattern="^.disapprove$")
-@errors_handler
-async def disapprovepm(disapprvpm):
-    if not disapprvpm.text[0].isalpha() and disapprvpm.text[0] not in (
-            "/", "#", "@", "!"):
-        try:
-            from userbot.modules.sql_helper.pm_permit_sql import dissprove
-        except BaseException:
-            await disapprvpm.edit("`Running on Non-SQL mode!`")
-            return
-
-        if disapprvpm.reply_to_msg_id:
-            reply = await disapprvpm.get_reply_message()
-            replied_user = await disapprvpm.client(
-                GetFullUserRequest(reply.from_id))
-            aname = replied_user.user.id
-            name0 = str(replied_user.user.first_name)
-            dissprove(replied_user.user.id)
-        else:
-            dissprove(disapprvpm.chat_id)
-            aname = await disapprvpm.client.get_entity(disapprvpm.chat_id)
-            name0 = str(aname.first_name)
-
-        await disapprvpm.edit(
-            f"[{name0}](tg://user?id={disapprvpm.chat_id}) `Disaproved to PM!`"
-        )
-
-        if BOTLOG:
-            await disapprvpm.client.send_message(
-                BOTLOG_CHATID,
-                f"[{name0}](tg://user?id={disapprvpm.chat_id})"
-                " was disapproved to PM you.",
+                "#APPROVED\n"
+                + "User: " + f"[{name0}](tg://user?id={uid})",
             )
 
 
 @register(outgoing=True, pattern="^.block$")
-@errors_handler
 async def blockpm(block):
     """ For .block command, block people from PMing you! """
-    if not block.text[0].isalpha() and block.text[0] not in ("/", "#", "@",
-                                                             "!"):
-
-        await block.edit("`You've been blocked!`")
+    if not block.text[0].isalpha() and block.text[0] not in (
+            "/", "#", "@", "!"):
+        await block.edit("`You are gonna be blocked from PM-ing my Master!`")
 
         if block.reply_to_msg_id:
             reply = await block.get_reply_message()
-            replied_user = await block.client(GetFullUserRequest(reply.from_id)
-                                              )
+            replied_user = await block.client(GetFullUserRequest(reply.from_id))
             aname = replied_user.user.id
             name0 = str(replied_user.user.first_name)
             await block.client(BlockRequest(replied_user.user.id))
@@ -275,24 +223,31 @@ async def blockpm(block):
         if BOTLOG:
             await block.client.send_message(
                 BOTLOG_CHATID,
-                "#BLOCKED\n" + "User: " + f"[{name0}](tg://user?id={uid})",
+                "#BLOCKED\n"
+                + "User: " + f"[{name0}](tg://user?id={uid})",
             )
 
 
 @register(outgoing=True, pattern="^.unblock$")
-@errors_handler
 async def unblockpm(unblock):
     """ For .unblock command, let people PMing you again! """
     if not unblock.text[0].isalpha() and unblock.text[0] \
             not in ("/", "#", "@", "!") and unblock.reply_to_msg_id:
-
-        await unblock.edit("`You have been unblocked.`")
+        try:
+            from userbot.modules.sql_helper.pm_permit_sql import approve
+        except AttributeError:
+            await unblock.edit("`Running on Non-SQL mode!`")
+            return
 
         if unblock.reply_to_msg_id:
             reply = await unblock.get_reply_message()
-            replied_user = await unblock.client(
-                GetFullUserRequest(reply.from_id))
+            replied_user = await unblock.client(GetFullUserRequest(reply.from_id))
             name0 = str(replied_user.user.first_name)
+            if approve(reply.from_id) is False:
+                return await unblock.edit("`You haven't blocked this user yet!`")
+            else:
+                return await unblock.edit("`My Master has forgiven you to PM now`")
+
             await unblock.client(UnblockRequest(replied_user.user.id))
 
         if BOTLOG:
@@ -304,18 +259,23 @@ async def unblockpm(unblock):
 
 
 CMD_HELP.update({
-    "pmpermit":
-    "\
-.approve\
-\nUsage: Approves the mentioned/replied person to PM.\
-\n\n.disapprove\
-\nUsage: Disapproves the mentioned/replied person to PM.\
-\n\n.block\
-\nUsage: Blocks the person.\
-\n\n.unblock\
-\nUsage: Unblocks the person so they can PM you.\
-\n\n.notifoff\
-\nUsage: Clears/Disables any notifications of unapproved PMs.\
-\n\n.notifon\
-\nUsage: Allows notifications for unapproved PMs."
+    'pmpermit': '.approve\
+        \nUsage: Approves the mentioned/replied person to PM.'
 })
+
+CMD_HELP.update({
+    '.block': 'Usage: Blocks the person from PMing you.'
+})
+
+CMD_HELP.update({
+    '.unblock': 'Usage: Unblocks the person so they can PM you.'
+})
+
+CMD_HELP.update({
+    '.notifoff': 'Usage: Clears any notifications of unapproved PMs.'
+})
+
+CMD_HELP.update({
+    '.notifon': 'Usage: Allows notifications for unapproved PMs.'
+})
+                
